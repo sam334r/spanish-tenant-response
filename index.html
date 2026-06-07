@@ -17,27 +17,41 @@
     .label{font-size:13px;font-weight:700;color:#444;margin-bottom:8px;display:block;text-transform:uppercase;letter-spacing:0.5px}
     textarea{width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid #d0d7e2;font-size:16px;font-family:inherit;color:#1e3a5f;resize:vertical;min-height:90px;background:#fff;line-height:1.4}
     textarea:focus{outline:none;border-color:#2563eb}
-    .btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:10px;transition:transform 0.08s}
+    .btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:10px;transition:transform 0.08s;display:flex;align-items:center;justify-content:center;gap:8px}
     .btn:active{transform:scale(0.98)}
     .btn:disabled{opacity:0.6;cursor:not-allowed}
     .btn-blue{background:#2563eb;color:#fff}
     .btn-green{background:#16a34a;color:#fff}
+    .btn-purple{background:#7c3aed;color:#fff}
     .btn-gray{background:#e5e7eb;color:#333}
     .result{background:#f0f4f8;padding:12px 14px;border-radius:10px;margin-top:10px;min-height:48px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;border-left:4px solid #16a34a}
     .result.empty{color:#999;font-style:italic;border-left-color:#d0d7e2}
     .result.err{border-left-color:#dc2626;color:#991b1b}
-    .loading{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px}
+    .loading{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle}
     @keyframes spin{to{transform:rotate(360deg)}}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:100;opacity:0;transition:opacity 0.2s;pointer-events:none}
     .toast.show{opacity:1}
-    .row{display:flex;gap:8px}
-    .row .btn{margin-top:10px}
+    input[type=file]{display:none}
+    .file-label{display:block;padding:14px;border:2px dashed #c4b5fd;border-radius:10px;text-align:center;color:#7c3aed;font-weight:600;cursor:pointer;margin-top:4px;background:#faf5ff}
+    .file-label:active{background:#f3e8ff}
+    .file-hint{font-size:12px;color:#888;text-align:center;margin-top:6px;font-weight:500}
+    .preview{margin-top:10px;border-radius:8px;max-width:100%;max-height:200px;display:block;margin-left:auto;margin-right:auto}
   </style>
 </head>
 <body>
 <div class="app">
   <h1>Spanish Tenant Helper</h1>
   <div class="sub">Translate tenant texts and craft Spanish responses.</div>
+
+  <div class="card">
+    <label class="label">Read screenshot</label>
+    <input type="file" id="imgIn" accept="image/*">
+    <label for="imgIn" class="file-label" id="fileLabel">Tap to choose photo or take picture</label>
+    <div class="file-hint">Great for multiple messages stacked in one screenshot</div>
+    <img id="preview" class="preview" style="display:none" alt="">
+    <button class="btn btn-purple" id="btnReadImg" onclick="readImage()" style="display:none">Read &amp; Translate</button>
+    <div class="result empty" id="imgOut" style="display:none">Translation will appear here</div>
+  </div>
 
   <div class="card">
     <label class="label">1. Paste tenant's Spanish message</label>
@@ -51,7 +65,7 @@
     <textarea id="englishIn" placeholder="The plumber will come tomorrow at 10am." autocomplete="off"></textarea>
     <button class="btn btn-green" id="btnToSpanish" onclick="translateToSpanish()">Translate to Spanish + Copy</button>
     <div class="result empty" id="spanishOut">Spanish translation will appear here</div>
-    <button class="btn btn-gray" id="btnCopy" onclick="copySpanish()" style="display:none">📋 Copy Spanish</button>
+    <button class="btn btn-gray" id="btnCopy" onclick="copySpanish()" style="display:none">Copy Spanish</button>
   </div>
 
   <div style="text-align:center;color:#999;font-size:12px;margin-top:8px">Powered by Claude</div>
@@ -60,11 +74,29 @@
 <div class="toast" id="toast">Copied!</div>
 
 <script>
-async function callTranslate(mode, text) {
+let selectedImage = null;
+
+document.getElementById('imgIn').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    const preview = document.getElementById('preview');
+    preview.src = dataUrl;
+    preview.style.display = 'block';
+    document.getElementById('btnReadImg').style.display = 'flex';
+    document.getElementById('fileLabel').textContent = 'Selected: ' + file.name + ' (tap to change)';
+    selectedImage = { dataUrl, mediaType: file.type, name: file.name };
+  };
+  reader.readAsDataURL(file);
+});
+
+async function callTranslate(body) {
   const r = await fetch('/api/translate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ mode, text })
+    body: JSON.stringify(body)
   });
   if (!r.ok) {
     let msg = 'Server returned ' + r.status;
@@ -75,17 +107,44 @@ async function callTranslate(mode, text) {
   return data.translation || '';
 }
 
+async function readImage() {
+  if (!selectedImage) return;
+  const btn = document.getElementById('btnReadImg');
+  const out = document.getElementById('imgOut');
+  out.style.display = 'block';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading"></span>Reading screenshot...';
+  out.className = 'result empty';
+  out.textContent = 'Reading screenshot (this can take a few seconds)...';
+  try {
+    const b64 = selectedImage.dataUrl.split(',')[1];
+    const translation = await callTranslate({
+      mode: 'image-to-english',
+      imageData: b64,
+      mediaType: selectedImage.mediaType
+    });
+    out.textContent = translation || '(no text found in image)';
+    out.className = 'result';
+  } catch (e) {
+    out.textContent = 'Error: ' + (e.message || e);
+    out.className = 'result err';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Read &amp; Translate';
+  }
+}
+
 async function translateToEnglish() {
   const text = document.getElementById('spanishIn').value.trim();
   const btn = document.getElementById('btnToEnglish');
   const out = document.getElementById('englishOut');
   if (!text) { out.textContent = 'Please paste a message first.'; out.className = 'result err'; return; }
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span>Translating…';
+  btn.innerHTML = '<span class="loading"></span>Translating...';
   out.className = 'result empty';
-  out.textContent = 'Translating…';
+  out.textContent = 'Translating...';
   try {
-    const translation = await callTranslate('to-english', text);
+    const translation = await callTranslate({ mode: 'to-english', text });
     out.textContent = translation || '(empty result)';
     out.className = 'result';
   } catch (e) {
@@ -104,12 +163,12 @@ async function translateToSpanish() {
   const copyBtn = document.getElementById('btnCopy');
   if (!text) { out.textContent = 'Please type a response first.'; out.className = 'result err'; return; }
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span>Translating…';
+  btn.innerHTML = '<span class="loading"></span>Translating...';
   out.className = 'result empty';
-  out.textContent = 'Translating…';
+  out.textContent = 'Translating...';
   copyBtn.style.display = 'none';
   try {
-    const translation = await callTranslate('to-spanish', text);
+    const translation = await callTranslate({ mode: 'to-spanish', text });
     out.textContent = translation || '(empty result)';
     out.className = 'result';
     if (translation) {
@@ -117,7 +176,7 @@ async function translateToSpanish() {
         await navigator.clipboard.writeText(translation);
         toast('Copied to clipboard!');
       } catch {}
-      copyBtn.style.display = 'block';
+      copyBtn.style.display = 'flex';
     }
   } catch (e) {
     out.textContent = 'Error: ' + (e.message || e);
